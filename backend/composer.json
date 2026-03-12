@@ -1,0 +1,14 @@
+{
+    "name": "golampi/interpreter",
+    "description": "Intérprete del lenguaje Golampi",
+    "type": "project",
+    "require": {
+        "antlr/antlr4-php-runtime": "^0.9"
+    },
+    "autoload": {
+        "psr-4": {
+            "Golampi\\": "src/"
+        }
+    },
+    "minimum-stability": "dev"
+}
