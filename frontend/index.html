@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Golampi — Intérprete</title>
+  <style>
+    :root {
+      --bg: #1a1b26;
+      --surface: #24283b;
+      --text: #c0caf5;
+      --accent: #7aa2f7;
+      --green: #9ece6a;
+      --red: #f7768e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 12px;
+      min-height: 100vh;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 12px 0; color: var(--accent); }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .toolbar button, .toolbar input[type="file"] {
+      padding: 8px 12px;
+      background: var(--surface);
+      border: 1px solid var(--accent);
+      color: var(--text);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .toolbar button:hover { background: #364a7c; }
+    .toolbar button.primary { background: var(--accent); color: var(--bg); }
+    .toolbar label { display: flex; align-items: center; }
+    .panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    @media (max-width: 768px) { .panel { grid-template-columns: 1fr; } }
+    .panel section {
+      background: var(--surface);
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .panel section h2 {
+      margin: 0;
+      padding: 8px 12px;
+      font-size: 0.9rem;
+      background: #16161e;
+      color: var(--accent);
+    }
+    #editor {
+      width: 100%;
+      min-height: 280px;
+      padding: 12px;
+      background: #16161e;
+      color: var(--text);
+      border: none;
+      resize: vertical;
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+    #console {
+      width: 100%;
+      min-height: 200px;
+      padding: 12px;
+      background: #16161e;
+      color: var(--green);
+      border: none;
+      font-family: inherit;
+      font-size: 0.85rem;
+      overflow-y: auto;
+    }
+    #console.has-errors { color: var(--red); }
+    #console pre { margin: 0; white-space: pre-wrap; }
+    #console table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    #console th, #console td {
+      border: 1px solid var(--accent);
+      padding: 6px 8px;
+      text-align: left;
+    }
+    #console th { background: #16161e; color: var(--accent); }
+    #console tr:nth-child(even) { background: rgba(122, 162, 247, 0.08); }
+    .reports {
+      margin-top: 12px;
+      padding: 12px;
+      background: var(--surface);
+      border-radius: 8px;
+    }
+    .reports h2 { margin: 0 0 8px 0; font-size: 0.9rem; color: var(--accent); }
+    .reports .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+    .reports button {
+      padding: 6px 10px;
+      background: var(--surface);
+      border: 1px solid var(--accent);
+      color: var(--text);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .reports button:hover { background: #364a7c; }
+    .api-url { font-size: 0.75rem; color: #565f89; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Golampi — Intérprete</h1>
+  <div class="toolbar">
+    <button type="button" id="btnNew">Nuevo</button>
+    <button type="button" id="btnClear">Limpiar</button>
+    <label>
+      <input type="file" id="fileLoad" accept=".golampi,.go,.txt" style="display:none">
+      <span class="btn">Cargar archivo</span>
+    </label>
+    <button type="button" id="btnSave">Guardar código</button>
+    <button type="button" id="btnRun" class="primary">Ejecutar / Analizar</button>
+    <button type="button" id="btnClearConsole">Limpiar consola</button>
+  </div>
+  <div class="panel">
+    <section>
+      <h2>Editor de código</h2>
+      <textarea id="editor" placeholder="func main() {&#10;    fmt.Println(&quot;Hola&quot;)&#10;}"></textarea>
+    </section>
+    <section>
+      <h2>Consola de salida</h2>
+      <div id="console"></div>
+    </section>
+  </div>
+  <div class="reports">
+    <h2>Panel de reportes</h2>
+    <div class="buttons">
+      <button type="button" id="btnDownloadResult">Descargar resultado</button>
+      <button type="button" id="btnDownloadErrors">Descargar errores</button>
+      <button type="button" id="btnDownloadSymbols">Descargar tabla de símbolos</button>
+    </div>
+    <p class="api-url">API: <span id="apiUrl">./backend/api.php</span></p>
+  </div>
+
+  <script>
+    const editor = document.getElementById('editor');
+    const consoleEl = document.getElementById('console');
+    const fileLoad = document.getElementById('fileLoad');
+    let lastResult = { output: '', errors: [], reportResult: '', reportErrors: '', reportSymbols: '' };
+
+    function apiUrl() {
+      return window.location.origin + '/backend/api.php';
+    }
+    document.getElementById('apiUrl').textContent = apiUrl();
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+    function setConsole(textOrErrors, isError = false) {
+      consoleEl.classList.toggle('has-errors', isError);
+      if (isError && Array.isArray(textOrErrors) && textOrErrors.length > 0) {
+        let html = '<table><thead><tr><th>#</th><th>Tipo</th><th>Descripción</th><th>Línea</th><th>Columna</th></tr></thead><tbody>';
+        textOrErrors.forEach((e, i) => {
+          html += '<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(e.type || '') + '</td><td>' + escapeHtml(e.message || '') + '</td><td>' + (e.line ?? '') + '</td><td>' + (e.column ?? '') + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        consoleEl.innerHTML = html;
+      } else {
+        const text = typeof textOrErrors === 'string' ? textOrErrors : '';
+        consoleEl.innerHTML = text ? '<pre>' + escapeHtml(text) + '</pre>' : '';
+      }
+    }
+
+    document.getElementById('btnNew').onclick = () => {
+      editor.value = '';
+      setConsole('');
+    };
+    document.getElementById('btnClear').onclick = () => { editor.value = ''; };
+    document.getElementById('btnClearConsole').onclick = () => setConsole('');
+
+    document.querySelector('.toolbar label').onclick = () => fileLoad.click();
+    fileLoad.onchange = () => {
+      const f = fileLoad.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => { editor.value = r.result; };
+      r.readAsText(f);
+    };
+
+    document.getElementById('btnSave').onclick = () => {
+      const blob = new Blob([editor.value], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'programa.golampi';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+
+    document.getElementById('btnRun').onclick = async () => {
+      const url = apiUrl();
+      setConsole('Ejecutando...');
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: editor.value }),
+        });
+        let data;
+        try {
+          const text = await res.text();
+          data = JSON.parse(text);
+        } catch (parseErr) {
+          setConsole('Error: la API no devolvió JSON válido. Comprueba que el servidor esté en la raíz del proyecto (php -S 0.0.0.0:8000) y que la URL sea: ' + url, true);
+          return;
+        }
+        if (!res.ok) {
+          setConsole('Error HTTP ' + res.status + ': ' + (data.error || data.message || res.statusText), true);
+          return;
+        }
+        lastResult = data;
+        if (data.errors && data.errors.length > 0) {
+          setConsole(data.errors, true);
+          if (data.output) {
+            const wrap = document.createElement('pre');
+            wrap.style.marginTop = '12px';
+            wrap.textContent = '--- Salida ---\n' + data.output;
+            consoleEl.appendChild(wrap);
+          }
+        } else {
+          setConsole(data.output !== undefined && data.output !== null ? String(data.output) : '(sin salida)', false);
+        }
+      } catch (e) {
+        setConsole('Error de conexión: ' + e.message + '\n\nComprueba que el servidor esté corriendo (php -S 0.0.0.0:8000 en la raíz del proyecto) y que la URL de la API sea: ' + url, true);
+      }
+    };
+
+    function download(content, filename, mimeType = 'text/plain;charset=utf-8') {
+      const blob = new Blob([content], { type: mimeType });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+    document.getElementById('btnDownloadResult').onclick = () => {
+      download(lastResult.reportResult || lastResult.output || '', 'resultado.txt');
+    };
+    document.getElementById('btnDownloadErrors').onclick = () => {
+      const errs = lastResult.errors;
+      if (errs && errs.length > 0) {
+        let html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Reporte de errores - Golampi</title><style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #7aa2f7;padding:8px;text-align:left}th{background:#16161e;color:#7aa2f7}body{font-family:monospace;background:#1a1b26;color:#c0caf5;padding:12px}</style></head><body><h1>Reporte de errores</h1><table><thead><tr><th>#</th><th>Tipo</th><th>Descripción</th><th>Línea</th><th>Columna</th></tr></thead><tbody>';
+        errs.forEach((e, i) => {
+          html += '<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(e.type || '') + '</td><td>' + escapeHtml(e.message || '') + '</td><td>' + (e.line ?? '') + '</td><td>' + (e.column ?? '') + '</td></tr>';
+        });
+        html += '</tbody></table></body></html>';
+        download(html, 'errores.html', 'text/html;charset=utf-8');
+      } else {
+        download(lastResult.reportErrors || '#\tTipo\tDescripción\tLínea\tColumna\n(No hay errores)', 'errores.txt');
+      }
+    };
+    document.getElementById('btnDownloadSymbols').onclick = () => {
+      download(lastResult.reportSymbols || '', 'tabla_simbolos.txt');
+    };
+  </script>
+</body>
+</html>
