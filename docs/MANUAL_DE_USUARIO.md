@@ -262,6 +262,4 @@ A continuación se listan mensajes típicos y cómo interpretarlos. [Completar o
   ```
   y abrir de nuevo [http://localhost:8000/frontend/index.html](http://localhost:8000/frontend/index.html).
 
----
 
-*Manual generado según lineamientos del Proyecto 1 — Organización de Lenguajes y Compiladores 2.*
