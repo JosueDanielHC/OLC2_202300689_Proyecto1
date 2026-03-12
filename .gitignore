@@ -1,0 +1,9 @@
+# Dependencias PHP (instalar con: cd backend && composer install)
+backend/vendor/
+
+# IDE / sistema
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
